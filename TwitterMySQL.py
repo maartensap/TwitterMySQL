@@ -14,10 +14,6 @@ from requests.exceptions import ChunkedEncodingError
 
 from TwitterAPI import TwitterAPI
 
-locationPath = '/'.join(os.path.abspath(__file__).split('/')[:-2])
-sys.path.append(locationPath)
-import locationInfo
-
 
 MAX_MYSQL_ATTEMPTS = 5
 MAX_TWITTER_ATTEMPTS = 5
@@ -58,7 +54,7 @@ class TwitterMySQL:
     """
 
     def _warn(self, *objs):
-        errorStream = open(self.errorFile, "a+") if "errorFile" in dir(self) else sys.stderr
+        errorStream = open(self.errorFile, "a+") if self.errorFile else sys.stderr
         print >> errorStream, "WARNING: ", " ".join(str(o) for o in objs)
 
     def __init__(self, **kwargs):
@@ -73,7 +69,12 @@ class TwitterMySQL:
 
         Optional parameters:
           - noWarnings      disable MySQL warnings [Default: False]
-          - errorFile       error logging file - warnings will be written it
+          - dropIfExists    set to True to delete the existing table
+          - geoLocate       a function that converts coordinates to state
+                            and/or address.
+                            Format:
+                            (state, address) = your_method(lat, long)
+          - errorFile       error logging file - warnings will be written to it
                             [Default: stderr]
           - jTweetToRow     JSON tweet to MySQL row tweet correspondence
                             (see help file for more info)
@@ -82,7 +83,7 @@ class TwitterMySQL:
                             [Default: DEFAULT_MYSQL_COL_DESC]
           - host            host where the MySQL database is on
                             [Default: localhost]
-          - 
+          - any other MySQL.connect argument
         """
         
         if "table" in kwargs:
@@ -90,7 +91,19 @@ class TwitterMySQL:
             del kwargs["table"]
         else:
             raise ValueError("Table name missing")
+
+        if "dropIfExists" in kwargs:
+            self.dropIfExists = kwargs["dropIfExists"]
+            del kwargs["dropIfExists"]
+        else:
+            self.dropIfExists = False
             
+        if "geoLocate" in kwargs:
+            self.geoLocate = kwargs["geoLocate"]
+            del kwargs["geoLocate"]
+        else:
+            self.geoLocate = None
+
         if "noWarnings" in kwargs and kwargs["noWarnings"]:
             del kwargs["noWarnings"]
             from warnings import filterwarnings
@@ -99,6 +112,8 @@ class TwitterMySQL:
         if "errorFile" in kwargs:
             self.errorFile = kwargs["errorFile"]
             del kwargs["errorFile"]
+        else:
+            self.errorFile = None
 
         if "jTweetToRow" in kwargs:
             self.jTweetToRow = kwargs["jTweetToRow"]
@@ -125,7 +140,7 @@ class TwitterMySQL:
                             for f in self.columns_description
                             if f.split(' ')[0][:5] != "index"]
         else:
-            self.columns_description = DEFAULT_MYSQL_COLS_DESC
+            self.columns_description = DEFAULT_MYSQL_COL_DESC
             self.columns = [f.split(' ')[0]
                             for f in self.columns_description
                             if f.split(' ')[0][:5] != "index"]
@@ -145,11 +160,21 @@ class TwitterMySQL:
         if not "charset" in kwargs:
             kwargs["charset"] = 'utf8'
 
+        self._connect(kwargs)
+        self.createTable()
+
+    def _connect(self, kwargs = None):
+        """Connecting to MySQL sometimes has to be redone"""
+        if kwargs:
+            self._SQLconnectKwargs = kwargs
+        elif not kwargs and self._SQLconnectKwargs:
+            kwargs = self._SQLconnectKwargs
+
         self._connection = MySQLdb.connect(**kwargs)
         self.cur = self._connection.cursor()
-        self._lm = locationInfo.LocationMap()
 
     def _wait(self, t, verbose = True):
+        """Wait function, offers a nice countdown"""
         for i in xrange(t):
             if verbose:
                 print "\rDone waiting in: %s" % datetime.timedelta(seconds=(t-i)),
@@ -168,11 +193,13 @@ class TwitterMySQL:
         try:
             ret = self.cur.execute(query)
         except Exception as e:
+            if "MySQL server has gone away" in str(e):
+                self._connect()
             nbAttempts += 1
             if not verbose: print "SQL:\t%s" % query[:200]
             self._warn("%s [Attempt: %d]" % (str(e), nbAttempts))
             self._wait(nbAttempts * 2)
-            self._execute(query, nbAttempts, False)
+            ret = self._execute(query, nbAttempts, False)
         
         return ret
 
@@ -186,15 +213,25 @@ class TwitterMySQL:
         try:
             ret = self.cur.executemany(query, values)
         except Exception as e:
+            if "MySQL server has gone away" in str(e):
+                self._connect()
             nbAttempts += 1
             if not verbose: print "SQL:\t%s" % query[:200]
             self._warn("%s [Attempt: %d]" % (str(e), nbAttempts))
             self._wait(nbAttempts * 2)
-            self._executemany(query, values, nbAttempts, False)
+            ret = self._executemany(query, values, nbAttempts, False)
 
         return ret
     
     def createTable(self):
+        """
+        Creates the table specified during __init__().
+        By default, the table will be deleted if it already exists,
+        but there will be a 10 second grace period for the user
+        to cancel the deletion (by hitting CTRL-c).
+        To disable the grace period and have it be deleted immediately,
+        please use dropIfExists = True during construction
+        """
         # Checking if table exists
         SQL = """show tables like '%s'""" % self.table
         self._execute(SQL)
@@ -204,13 +241,13 @@ class TwitterMySQL:
             self._execute(SQL)
         else:
             # table does exist
+            if not self.dropIfExists:
+                USER_DELAY = 10
 
-            USER_DELAY = 10
-
-            for i in xrange(USER_DELAY):
-                print "\rTable %s already exists, it will be deleted in %s, please hit CTRL-C to cancel the deletion" % (self.table, datetime.timedelta(seconds=USER_DELAY-i)), 
-                sys.stdout.flush()
-                time.sleep(1)
+                for i in xrange(USER_DELAY):
+                    print "\rTable %s already exists, it will be deleted in %s, please hit CTRL-C to cancel the deletion" % (self.table, datetime.timedelta(seconds=USER_DELAY-i)), 
+                    sys.stdout.flush()
+                    time.sleep(1)
 
             print "\rTable %s already exists, it will be deleted" % self.table, " " * 150
             SQL_DROP = """drop table %s""" % self.table
@@ -278,10 +315,13 @@ class TwitterMySQL:
         # Coordinates state and address
         if "coordinates" in jTweet and jTweet["coordinates"]:
             lon, lat = map(lambda x: float(x), jTweet["coordinates"]["coordinates"])
-            (state, point) = self._lm.reverseGeocodeLocal(lat, lon)
+            if self.geoLocate:
+                (state, address) = self.geoLocate(lat, lon)
+            else:
+                (state, address) = (None, None)
             tweet["coordinates"] = str(jTweet["coordinates"]["coordinates"])
             tweet["coordinates_state"] = str(state) if state else None
-            tweet["coordinates_address"] = str({"lon": lon, "lat": lat})
+            tweet["coordinates_address"] = str(address) if address else str({"lon": lon, "lat": lat})
         
         # Tweet is dictionary of depth one, now has to be linearized
         tweet = [tweet[SQLcol] for SQLcol in self.columns]
@@ -316,7 +356,7 @@ class TwitterMySQL:
                         self._warn("Error message received from Twitter %s" % str(response))
                         continue
                     # print response
-                    yield self.prepTweet(response)
+                    yield self._prepTweet(response)
                 done = True
             except ChunkedEncodingError as e:
                 nbAttempts += 1
