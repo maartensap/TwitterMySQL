@@ -381,7 +381,8 @@ class TwitterMySQL:
             print tweet
 
         For more info (knowing which twitterMethod to use) see:
-        http://dev.twitter.com/docs/api/1.1
+        http://dev.twitter.com/rest/public
+        http://dev.twitter.com/streaming/overview
         """ 
         for response in self._apiRequest(twitterMethod, params):
             yield response
@@ -399,7 +400,8 @@ class TwitterMySQL:
             twtSQL.tweetsToMySQL('statuses/lookup', id="504710715954188288")
 
         For more twitterMethods and info on how to use them, see:
-        http://dev.twitter.com/docs/api/1.1
+        http://dev.twitter.com/rest/public
+        http://dev.twitter.com/streaming/overview
         """
         tweets = []
         i = 0
@@ -437,6 +439,12 @@ class TwitterMySQL:
 
 
     def randomSampleToMySQL(self, replace = False):
+        """
+        Takes the random sample of all tweets (~ 1%) and
+        inserts it into the instance's table.
+        For more info, see:
+        http://dev.twitter.com/streaming/reference/get/statuses/sample
+        """
         self.tweetsToMySQL('statuses/sample', replace = replace)
         
     def filterStreamToMySQL(self, **params):
@@ -449,7 +457,7 @@ class TwitterMySQL:
             twtSQL.filterStreamToMySQL(locations="-124.848974,24.396308,-66.885444,49.384358")
 
         More info here:
-        http://dev.twitter.com/docs/api/1.1/post/statuses/filter
+        http://dev.twitter.com/streaming/reference/post/statuses/filter
         """
         self.tweetsToMySQL('statuses/filter', **params)
 
@@ -463,7 +471,7 @@ class TwitterMySQL:
         for tweet in userTimeline(screen_name = "taylorswift13"):
             print tweet
 
-        See http://dev.twitter.com/docs/api/1.1/get/statuses/user_timeline for details        
+        See http://dev.twitter.com/rest/reference/get/statuses/user_timeline for details        
         """
         ok = True
         print "Finding tweets for %s" % ', '.join(str(k)+': '+str(v) for k,v in params.iteritems())
@@ -497,7 +505,7 @@ class TwitterMySQL:
         userTimelineToMySQL(screen_name = "taylorswift13")
 
         For details on keywords to use, see
-        http://dev.twitter.com/docs/api/1.1/get/statuses/user_timeline
+        http://dev.twitter.com/rest/reference/get/statuses/user_timeline
         """
         print "Grabbing users tweets and inserting into MySQL"
         
