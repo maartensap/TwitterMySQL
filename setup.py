@@ -24,5 +24,5 @@ setup(
     keywords=['twitter','MySQL'],
     description='Wrapper for the Twitter APIs and MySQL',
     long_description=read('README.md'),
-    install_requires = ['requests', 'requests_oauthlib', 'TwitterAPi', 'MySQLdb']
+    install_requires = ['requests', 'requests_oauthlib', 'TwitterAPI', 'MySQL-python']
 )
