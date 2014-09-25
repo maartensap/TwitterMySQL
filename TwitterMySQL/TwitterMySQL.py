@@ -10,17 +10,17 @@ import os, sys
 import json, re
 
 import MySQLdb
-import xml.etree.ElementTree as ET 
-
+from TwitterAPI import TwitterAPI
 from requests.exceptions import ChunkedEncodingError
 
-from TwitterAPI import TwitterAPI
+import xml.etree.ElementTree as ET
+from HTMLParser import HTMLParser
 
 
 MAX_MYSQL_ATTEMPTS = 5
 MAX_TWITTER_ATTEMPTS = 5
 TWEET_LIMIT_BEFORE_INSERT = 8000
-    
+
 DEFAULT_MYSQL_COL_DESC = ["user_id bigint(20)", "message_id bigint(20) primary key",
                           "message text", "created_time datetime",
                           "in_reply_to_message_id bigint(20)",
@@ -57,7 +57,7 @@ class TwitterMySQL:
 
     def _warn(self, *objs):
         errorStream = open(self.errorFile, "a+") if self.errorFile else sys.stderr
-        print >> errorStream, "WARNING: ", " ".join(str(o) for o in objs)
+        print >> errorStream, "\rWARNING: ", " ".join(str(o) for o in objs)
 
     def __init__(self, **kwargs):
         """
@@ -163,7 +163,7 @@ class TwitterMySQL:
             kwargs["charset"] = 'utf8'
 
         self._connect(kwargs)
-        self.createTable()
+        # self.createTable()
 
     def _connect(self, kwargs = None):
         """Connecting to MySQL sometimes has to be redone"""
@@ -225,7 +225,7 @@ class TwitterMySQL:
 
         return ret
     
-    def createTable(self):
+    def createTable(self, table = None):
         """
         Creates the table specified during __init__().
         By default, the table will be deleted if it already exists,
@@ -234,10 +234,12 @@ class TwitterMySQL:
         To disable the grace period and have it be deleted immediately,
         please use dropIfExists = True during construction
         """
+        table = self.table if not table else table
+
         # Checking if table exists
-        SQL = """show tables like '%s'""" % self.table
+        SQL = """show tables like '%s'""" % table
         self._execute(SQL)
-        SQL = """create table %s (%s)""" % (self.table, ', '.join(self.columns_description))
+        SQL = """create table %s (%s)""" % (table, ', '.join(self.columns_description))
         if not self.cur.fetchall():
             # Table doesn't exist
             self._execute(SQL)
@@ -247,12 +249,12 @@ class TwitterMySQL:
                 USER_DELAY = 10
 
                 for i in xrange(USER_DELAY):
-                    print "\rTable %s already exists, it will be deleted in %s, please hit CTRL-C to cancel the deletion" % (self.table, datetime.timedelta(seconds=USER_DELAY-i)), 
+                    print "\rTable %s already exists, it will be deleted in %s, please hit CTRL-C to cancel the deletion" % (table, datetime.timedelta(seconds=USER_DELAY-i)), 
                     sys.stdout.flush()
                     time.sleep(1)
 
-            print "\rTable %s already exists, it will be deleted" % self.table, " " * 150
-            SQL_DROP = """drop table %s""" % self.table
+            print "\rTable %s already exists, it will be deleted" % table, " " * 150
+            SQL_DROP = """drop table %s""" % table
             self._execute(SQL_DROP)
             self._execute(SQL)
             
@@ -269,6 +271,9 @@ class TwitterMySQL:
         table = self.table if not table else table
         columns = self.columns if not columns else columns
 
+        EXISTS = "SHOW TABLES LIKE '%s'" % table
+        if not self._execute(EXISTS, verbose = False): self.createTable(table)
+
         SQL = "INSERT INTO %s (%s) VALUES (%s)" % (table,
                                                    ', '.join(columns),
                                                    ', '.join("%s" for r in rows[0]))
@@ -279,6 +284,9 @@ class TwitterMySQL:
         table = self.table if not table else table
         columns = self.columns if not columns else columns
         
+        EXISTS = "SHOW TABLES LIKE '%s'" % table
+        if not self._execute(EXISTS, verbose = False): self.createTable(table)
+
         SQL = "REPLACE INTO %s (%s) VALUES (%s)" % (table,
                                                     ', '.join(columns),
                                                     ', '.join("%s" for r in rows[0]))
@@ -287,6 +295,9 @@ class TwitterMySQL:
     def _tweetTimeToMysql(self, timestr):
         # Mon Jan 25 05:02:27 +0000 2010
         return str(time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(timestr, '%a %b %d %H:%M:%S +0000 %Y')))
+
+    def _yearMonth(self, mysqlTime):
+        return time.strftime("%Y_%m",time.strptime(mysqlTime,"%Y-%m-%d %H:%M:%S"))
 
     def _prepTweet(self, jTweet):
         
@@ -298,14 +309,14 @@ class TwitterMySQL:
                 if SQLcol in self.jTweetToRow:
                     tweet[SQLcol] = eval("jTweet%s" % self.jTweetToRow[SQLcol])
                     if isinstance(tweet[SQLcol], str) or isinstance(tweet[SQLcol], unicode):
-                        tweet[SQLcol] = tweet[SQLcol].encode("utf-8")
+                        tweet[SQLcol] = HTMLParser().unescape(tweet[SQLcol]).encode("utf-8")
                     if SQLcol == "created_time":
                         tweet[SQLcol] = self._tweetTimeToMysql(tweet[SQLcol])
                     if SQLcol == "source":
                         try:
                             tweet[SQLcol] = ET.fromstring(re.sub("&", "&amp;", tweet[SQLcol])).text
                         except Exception as e:
-                            raise NotImplementedError("OOPS", e, [tweet[SQLcol]])
+                            raise NotImplementedError("OOPS", type(e), e, [tweet[SQLcol]])
                 else:
                     tweet[SQLcol] = None
             except KeyError:
@@ -357,11 +368,11 @@ class TwitterMySQL:
                     if i == 0 and "message" in response and "code" in response:
                         self._warn("Error message received from Twitter %s" % str(response))
                         continue
-                    # print response
+                    
                     yield self._prepTweet(response)
                 done = True
             except ChunkedEncodingError as e:
-                nbAttempts += 1
+                # nbAttempts += 1
                 self._warn("ChunkedEncodingError encountered, reconnecting immediately: [%s]" % e)
                 continue
             except Exception as e:
@@ -389,6 +400,63 @@ class TwitterMySQL:
         for response in self._apiRequest(twitterMethod, params):
             yield response
 
+    def _tweetsToMySQL(self, tweetsYielder, replace = False, monthlyTables = False):
+        """
+        Tool function to insert tweets into MySQL tables in chunks,
+        while outputting counts.
+        """
+        tweetsDict = {}
+        i = 0
+        
+        # TWEET_LIMIT_BEFORE_INSERT = 100
+
+        for tweet in tweetsYielder:
+            i += 1
+            
+            try:
+                tweetsDict[self._yearMonth(tweet[3])].append(tweet)
+            except KeyError:
+                tweetsDict[self._yearMonth(tweet[3])] = [tweet]
+            
+            if i % 10 == 0:
+                print "\rNumber of tweets grabbed: %d" % i,
+                sys.stdout.flush()
+            
+            if i % TWEET_LIMIT_BEFORE_INSERT == 0:
+                print
+                if monthlyTables:
+                    for yearMonth, twts in tweetsDict.iteritems():
+                        table = self.table+"_"+yearMonth
+                        if replace:
+                            print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, table, self.replaceRows(twts, table = table, verbose = False), time.strftime("%c"))
+                        else:
+                            print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(twts, table = table, verbose = False), table, time.strftime("%c"))
+                else:
+                    tweets = [twt for twts in tweetsDict.values() for twt in twts]
+                    if replace:
+                        print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
+                    else:
+                        print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
+                i, tweetsDict = (0, {})
+
+        # If there are remaining tweets
+        if any(tweetsDict.values()):
+            print
+            if monthlyTables:
+                for yearMonth, twts in tweetsDict.iteritems():
+                    table = self.table+"_"+yearMonth
+                    if replace:
+                        print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, table, self.replaceRows(twts, table = table, verbose = False), time.strftime("%c"))
+                    else:
+                        print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(twts, table = table, verbose = False), table, time.strftime("%c"))
+            else:
+                tweets = [twt for twts in tweetsDict.values() for twt in twts]
+                if replace:
+                    print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
+                else:
+                    print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
+            i, tweetsDict = (0, {})
+
     def tweetsToMySQL(self, twitterMethod, **params):
         """
         Ultra uber awesome function that takes in a Twitter API
@@ -405,19 +473,33 @@ class TwitterMySQL:
         http://dev.twitter.com/rest/public
         http://dev.twitter.com/streaming/overview
         """
-        tweets = []
-        i = 0
-        
-        TWEET_LIMIT_BEFORE_INSERT = 100
-        
-        replace = False # Replace SQL command instead of insert
+
+        # Replace SQL command instead of insert
         if "replace" in params:
             replace = params["replace"]
             del params["replace"]
-            
+        else:
+            replace = False
+
+        if "monthlyTables" in params:
+            monthlyTables = params["monthlyTables"]
+            del params["monthlyTables"]
+        else:
+            monthlyTables = False
+        
+        self._tweetsToMySQL(self._apiRequest(twitterMethod, params), replace = replace, monthlyTables = monthlyTables)
+        return
+        tweetsDict = {}
+        i = 0
+        
+        TWEET_LIMIT_BEFORE_INSERT = 100
+
         for tweet in self._apiRequest(twitterMethod, params):
             i += 1
-            tweets.append(tweet)
+            try:
+                tweetsDict[self._yearMonth(tweet[3])].append(tweet)
+            except KeyError:
+                tweetsDict[self._yearMonth(tweet[3])] = [tweet]
             
             if i % 10 == 0:
                 print "\rNumber of tweets grabbed: %d" % i,
@@ -425,30 +507,49 @@ class TwitterMySQL:
             
             if i % TWEET_LIMIT_BEFORE_INSERT == 0:
                 print
-                if replace:
-                    print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
+                if monthlyTables:
+                    for yearMonth, twts in tweetsDict.iteritems():
+                        table = self.table+"_"+yearMonth
+                        if replace:
+                            print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, table, self.replaceRows(twts, table = table, verbose = False), time.strftime("%c"))
+                        else:
+                            print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(twts, table = table, verbose = False), table, time.strftime("%c"))
                 else:
-                    print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
-                i, tweets = (0, [])
+                    tweets = [twt for twts in tweetsDict.values() for twt in twts]
+                    if replace:
+                        print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
+                    else:
+                        print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
+                i, tweetsDict = (0, {})
 
         # If there are remaining tweets
         if tweets:
             print
-            if replace:
-                print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
+            if monthlyTables:
+                for yearMonth, twts in tweetsDict.iteritems():
+                    table = self.table+"_"+yearMonth
+                    if replace:
+                        print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, table, self.replaceRows(twts, table = table, verbose = False), time.strftime("%c"))
+                    else:
+                        print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(twts, table = table, verbose = False), table, time.strftime("%c"))
             else:
-                print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
+                tweets = [twt for twts in tweetsDict.values() for twt in twts]
+                if replace:
+                    print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
+                else:
+                    print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
+            i, tweetsDict = (0, {})
 
 
-    def randomSampleToMySQL(self, replace = False):
+    def randomSampleToMySQL(self, replace = False, monthlyTables = True):
         """
         Takes the random sample of all tweets (~ 1%) and
-        inserts it into the instance's table.
+        inserts it into monthly table [tableName_20YY_MM].
         For more info, see:
         http://dev.twitter.com/streaming/reference/get/statuses/sample
         """
-        self.tweetsToMySQL('statuses/sample', replace = replace)
-        
+        self.tweetsToMySQL('statuses/sample', replace = replace, monthlyTables = monthlyTables)
+
     def filterStreamToMySQL(self, **params):
         """
         Use this to insert the tweets from the FilterStream into MySQL
@@ -462,7 +563,6 @@ class TwitterMySQL:
         http://dev.twitter.com/streaming/reference/post/statuses/filter
         """
         self.tweetsToMySQL('statuses/filter', **params)
-
 
     def userTimeline(self, **params):
         """
@@ -511,39 +611,20 @@ class TwitterMySQL:
         """
         print "Grabbing users tweets and inserting into MySQL"
         
-        tweets = []
-        i = 0
-        
-        TWEET_LIMIT_BEFORE_INSERT = 1000
-        
-        replace = False # Replace SQL command instead of insert
+        # Replace SQL command instead of insert
         if "replace" in params:
             replace = params["replace"]
             del params["replace"]
-            
-        for tweet in self.userTimeline(**params):
-            i += 1
-            tweets.append(tweet)
-            
-            if i % 10 == 0:
-                print "\rNumber of tweets grabbed: %d" % i,
-                sys.stdout.flush()
-            
-            if i % TWEET_LIMIT_BEFORE_INSERT == 0:
-                print
-                if replace:
-                    print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
-                else:
-                    print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
-                i, tweets = (0, [])
-                
-        # If there are remaining tweets
-        if tweets:
-            # print
-            if replace:
-                print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
-            else:
-                print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
+        else:
+            replace = False
+
+        if "monthlyTables" in params:
+            monthlyTables = params["monthlyTables"]
+            del params["monthlyTables"]
+        else:
+            monthlyTables = False
+
+        self._tweetsToMySQL(self.userTimeline(**params), replace = replace, monthlyTables = monthlyTables)
 
         
         
