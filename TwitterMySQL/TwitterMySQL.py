@@ -5,6 +5,14 @@ __email__ = "maartensap93@gmail.com"
 __version__ = "0.3"
 
 
+"""
+TODOs:
+pull retweeted message as well as original
+Command Line interface
+better geolocation?
+
+"""
+
 import datetime, time
 import os, sys
 import json, re
@@ -188,7 +196,7 @@ class TwitterMySQL:
     def _execute(self, query, nbAttempts = 0, verbose = True):
         if nbAttempts >= MAX_MYSQL_ATTEMPTS:
             self._warn("Too many attempts to execute the query, moving on from this [%s]" % query[:300])
-            return
+            return 0
         
         if verbose: print "SQL:\t%s" % query[:200]
 
@@ -208,7 +216,7 @@ class TwitterMySQL:
     def _executemany(self, query, values, nbAttempts = 0, verbose = True):
         if nbAttempts >= MAX_MYSQL_ATTEMPTS:
             self._warn("Too many attempts to execute the query, moving on from this [%s]" % query[:300])
-            return
+            return 0
 
         if verbose: print "SQL:\t%s" % query[:200]
         ret = None
@@ -625,23 +633,3 @@ class TwitterMySQL:
             monthlyTables = False
 
         self._tweetsToMySQL(self.userTimeline(**params), replace = replace, monthlyTables = monthlyTables)
-
-        
-        
-    """
-    Public Functions:
-        insertRow - OK
-        insertRows - ok
-        replaceRow - ok
-        relaceRows - ok
-        createTable - OK
-        twitterRequest - waits when response is "limit reached" - OK
-        twitterToMySQL total package function - 
-    Private Functions:
-        _execute - OK
-        _executemany - OK
-        dateconversion - OK
-        prepTweet - OK
-       In __init__ handle the case of not api but consumer key, etc. - ok
-
-    """
