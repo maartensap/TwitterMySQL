@@ -388,6 +388,8 @@ class TwitterMySQL:
                 self._warn("unknown exception encountered, waiting %d second: [%s]" % (nbAttempts * 2, str(e)))
                 self._wait(nbAttempts * 2)
                 continue
+            # If it makes it all the way here, there was no error encountered
+            nbAttempts = 0
             
         if nbAttempts >= MAX_TWITTER_ATTEMPTS:
             self._warn("Request attempted too many times (%d), it will not be executed anymore [%s]" % (nbAttempts, twitterMethod + str(params)))
