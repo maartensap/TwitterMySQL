@@ -170,8 +170,11 @@ class TwitterMySQL:
         if not "charset" in kwargs:
             kwargs["charset"] = 'utf8'
 
-        self._connect(kwargs)
-        # self.createTable()
+        try:
+            self._connect(kwargs)
+        except TypeError as e:
+            print e
+            print "You're probably using the wrong keywords, here's a list:\n"+self.__init__.__doc__
 
     def _connect(self, kwargs = None):
         """Connecting to MySQL sometimes has to be redone"""
