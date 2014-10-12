@@ -35,9 +35,9 @@ DEFAULT_MYSQL_COL_DESC = ["user_id bigint(20)", "message_id bigint(20) primary k
                           "in_reply_to_user_id bigint(20)", "retweet_message_id bigint(20)",
                           "source varchar(128)", "lang varchar(4)", "time_zone varchar(64)",
                           "friend_count int(6)", "followers_count int(6)",
-                          "coordinates varchar(128)", "coordinates_address varchar(64)",
-                          "coordinates_state varchar(3)", "index useriddex (user_id)",
-                          "index datedex (created_time)"]
+                          "location varchar(200)", "coordinates varchar(128)",
+                          "coordinates_address varchar(64)", "coordinates_state varchar(3)",
+                          "index useriddex (user_id)", "index datedex (created_time)"]
 DEFAULT_TWEET_JSON_SQL_CORR = {'id': "['id_str']",
                                'message_id': "['id_str']",
                                'message': "['text']",
