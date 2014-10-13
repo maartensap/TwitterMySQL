@@ -173,8 +173,8 @@ class TwitterMySQL:
         try:
             self._connect(kwargs)
         except TypeError as e:
-            print e
             print "You're probably using the wrong keywords, here's a list:\n"+self.__init__.__doc__
+            raise TypeError(e)
 
     def _connect(self, kwargs = None):
         """Connecting to MySQL sometimes has to be redone"""
