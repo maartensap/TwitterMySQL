@@ -588,6 +588,34 @@ class TwitterMySQL:
 
         self._tweetsToMySQL(self.userTimeline(**params), replace = replace, monthlyTables = monthlyTables)
 
+    def search(self, **params):
+        """
+        Search API
+        """
+        ok = True
+        print "Finding tweets for %s" % ', '.join(str(k)+': '+str(v) for k,v in params.iteritems())
+        params["count"] = 200 # Twitter limits to 200 returns
+        
+        i = 0
+
+        while ok:
+            
+            tweets = [tweet for tweet in self._apiRequest('search/tweets', params)]
+            if not tweets:
+                # Warn about no tweets?
+                ok = False
+                if i != 0: print 
+            else:
+                i += len(tweets)
+                
+                print "\rNumber of tweets grabbed: %d" % i,
+                sys.stdout.flush()
+
+                params["max_id"] = str(long(tweets[-1][1])-1)
+                for tweet in tweets:
+                    yield tweet
+
+
     def searchToMySQL(self, **params):
         """
         Queries the Search API and pulls as many results as possible
@@ -613,4 +641,4 @@ class TwitterMySQL:
         else:
             monthlyTables = False
 
-        self._tweetsToMySQL(self.apiRequest('search/tweets', **params), replace = replace, monthlyTables = monthlyTables)
+        self._tweetsToMySQL(self.search(**params), replace = replace, monthlyTables = monthlyTables)
