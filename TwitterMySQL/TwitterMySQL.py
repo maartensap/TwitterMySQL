@@ -502,57 +502,6 @@ class TwitterMySQL:
         
         self._tweetsToMySQL(self._apiRequest(twitterMethod, params), replace = replace, monthlyTables = monthlyTables)
         return
-        tweetsDict = {}
-        i = 0
-        
-        TWEET_LIMIT_BEFORE_INSERT = 100
-
-        for tweet in self._apiRequest(twitterMethod, params):
-            i += 1
-            try:
-                tweetsDict[self._yearMonth(tweet[3])].append(tweet)
-            except KeyError:
-                tweetsDict[self._yearMonth(tweet[3])] = [tweet]
-            
-            if i % 10 == 0:
-                print "\rNumber of tweets grabbed: %d" % i,
-                sys.stdout.flush()
-            
-            if i % TWEET_LIMIT_BEFORE_INSERT == 0:
-                print
-                if monthlyTables:
-                    for yearMonth, twts in tweetsDict.iteritems():
-                        table = self.table+"_"+yearMonth
-                        if replace:
-                            print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, table, self.replaceRows(twts, table = table, verbose = False), time.strftime("%c"))
-                        else:
-                            print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(twts, table = table, verbose = False), table, time.strftime("%c"))
-                else:
-                    tweets = [twt for twts in tweetsDict.values() for twt in twts]
-                    if replace:
-                        print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
-                    else:
-                        print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
-                i, tweetsDict = (0, {})
-
-        # If there are remaining tweets
-        if tweets:
-            print
-            if monthlyTables:
-                for yearMonth, twts in tweetsDict.iteritems():
-                    table = self.table+"_"+yearMonth
-                    if replace:
-                        print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, table, self.replaceRows(twts, table = table, verbose = False), time.strftime("%c"))
-                    else:
-                        print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(twts, table = table, verbose = False), table, time.strftime("%c"))
-            else:
-                tweets = [twt for twts in tweetsDict.values() for twt in twts]
-                if replace:
-                    print "Sucessfully replaced %4d tweets into '%s' (%4d rows affected) [%s]" % (i, self.table, self.replaceRows(tweets, verbose = False), time.strftime("%c"))
-                else:
-                    print "Sucessfully inserted %4d tweets into '%s' [%s]" % (self.insertRows(tweets, verbose = False), self.table, time.strftime("%c"))
-            i, tweetsDict = (0, {})
-
 
     def randomSampleToMySQL(self, replace = False, monthlyTables = True):
         """
@@ -638,3 +587,30 @@ class TwitterMySQL:
             monthlyTables = False
 
         self._tweetsToMySQL(self.userTimeline(**params), replace = replace, monthlyTables = monthlyTables)
+
+    def searchToMySQL(self, **params):
+        """
+        Queries the Search API and pulls as many results as possible
+
+        Here's an example of how to use it:
+        userTimelineToMySQL(screen_name = "taylorswift13")
+
+        For details on keywords to use, see
+        http://dev.twitter.com/rest/reference/get/statuses/user_timeline
+        """
+        print "Grabbing users tweets and inserting into MySQL"
+        
+        # Replace SQL command instead of insert
+        if "replace" in params:
+            replace = params["replace"]
+            del params["replace"]
+        else:
+            replace = False
+
+        if "monthlyTables" in params:
+            monthlyTables = params["monthlyTables"]
+            del params["monthlyTables"]
+        else:
+            monthlyTables = False
+
+        self._tweetsToMySQL(self.apiRequest('search/tweets', **params), replace = replace, monthlyTables = monthlyTables)
