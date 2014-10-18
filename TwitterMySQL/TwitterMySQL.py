@@ -28,6 +28,7 @@ from HTMLParser import HTMLParser
 MAX_MYSQL_ATTEMPTS = 5
 MAX_TWITTER_ATTEMPTS = 5
 TWEET_LIMIT_BEFORE_INSERT = 8000
+TWT_REST_WAIT = 15*60
 
 DEFAULT_MYSQL_COL_DESC = ["user_id bigint(20)", "message_id bigint(20) primary key",
                           "message text", "created_time datetime",
@@ -377,7 +378,11 @@ class TwitterMySQL:
                     if isinstance(response, int) or "delete" in response:
                         continue
                     if i == 0 and "message" in response and "code" in response:
-                        self._warn("Error message received from Twitter %s" % str(response))
+                        if response['code'] == 88: # Rate limit exceeded
+                            self._warn("Rate limit exceeded, waiting 15 minutes before a restart")
+                            self.wait(TWT_REST_WAIT)
+                        else:
+                            self._warn("Error message received from Twitter %s" % str(response))
                         continue
                     
                     yield self._prepTweet(response)
