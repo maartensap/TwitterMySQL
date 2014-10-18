@@ -380,7 +380,7 @@ class TwitterMySQL:
                     if i == 0 and "message" in response and "code" in response:
                         if response['code'] == 88: # Rate limit exceeded
                             self._warn("Rate limit exceeded, waiting 15 minutes before a restart")
-                            self.wait(TWT_REST_WAIT)
+                            self._wait(TWT_REST_WAIT)
                         else:
                             self._warn("Error message received from Twitter %s" % str(response))
                         continue
