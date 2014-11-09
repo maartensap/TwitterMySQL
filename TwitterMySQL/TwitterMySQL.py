@@ -286,7 +286,6 @@ class TwitterMySQL:
         EXISTS = "SHOW TABLES LIKE '%s'" % table
         if not self._execute(EXISTS, verbose = False): self.createTable(table)
 
-        print "Maarten", rows
         SQL = "INSERT INTO %s (%s) VALUES (%s)" % (table,
                                                    ', '.join(columns),
                                                    ', '.join("%s" for r in rows[0]))
