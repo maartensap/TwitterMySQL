@@ -27,7 +27,7 @@ from HTMLParser import HTMLParser
 
 MAX_MYSQL_ATTEMPTS = 5
 MAX_TWITTER_ATTEMPTS = 5
-TWEET_LIMIT_BEFORE_INSERT = 8000
+TWEET_LIMIT_BEFORE_INSERT = 100 #edited by selah
 TWT_REST_WAIT = 15*60
 
 DEFAULT_MYSQL_COL_DESC = ["user_id bigint(20)", "message_id bigint(20) primary key",
@@ -305,6 +305,7 @@ class TwitterMySQL:
                                                     ', '.join("%s" for r in rows[0]))
         return self._executemany(SQL, rows, verbose = verbose)
 
+#modify this as necessaary if I get a time in a format different than what is expected
     def _tweetTimeToMysql(self, timestr, parseFormat = '%a %b %d %H:%M:%S +0000 %Y'):
         # Mon Jan 25 05:02:27 +0000 2010
         return str(time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(timestr, parseFormat)))
@@ -312,6 +313,7 @@ class TwitterMySQL:
     def _yearMonth(self, mysqlTime):
         return time.strftime("%Y_%m",time.strptime(mysqlTime,"%Y-%m-%d %H:%M:%S"))
 
+#TODO - what is JTweet?  What type of object, one tweet or all the tweets?
     def _prepTweet(self, jTweet):
         
         tweet = {}
@@ -507,7 +509,6 @@ class TwitterMySQL:
             monthlyTables = False
         
         self._tweetsToMySQL(self._apiRequest(twitterMethod, params), replace = replace, monthlyTables = monthlyTables)
-        
 
     def randomSampleToMySQL(self, replace = False, monthlyTables = True):
         """
@@ -620,7 +621,6 @@ class TwitterMySQL:
                 params["max_id"] = str(long(tweets[-1][1])-1)
                 for tweet in tweets:
                     yield tweet
-
 
     def searchToMySQL(self, **params):
         """
