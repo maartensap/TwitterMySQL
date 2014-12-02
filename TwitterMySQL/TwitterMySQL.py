@@ -36,7 +36,7 @@ DEFAULT_MYSQL_COL_DESC = ["user_id bigint(20)", "message_id bigint(20) primary k
                           "in_reply_to_user_id bigint(20)", "retweet_message_id bigint(20)",
                           "source varchar(128)", "lang varchar(4)", "time_zone varchar(64)",
                           "friend_count int(6)", "followers_count int(6)",
-                          "location varchar(200)", "coordinates varchar(128)",
+                          "user_location varchar(200)", "tweet_location varchar(200)", "coordinates varchar(128)",
                           "coordinates_address varchar(64)", "coordinates_state varchar(3)",
                           "index useriddex (user_id)", "index datedex (created_time)"]
 DEFAULT_TWEET_JSON_SQL_CORR = {'id': "['id_str']",
@@ -47,7 +47,8 @@ DEFAULT_TWEET_JSON_SQL_CORR = {'id': "['id_str']",
                                'in_reply_to_message_id': "['in_reply_to_status_id_str']",
                                'in_reply_to_user_id': "['in_reply_to_user_id_str']",
                                'retweet_message_id': "['retweeted_status']['id']",
-                               'location': "['user']['location']",
+                               'user_location': "['user']['location']",
+                               'tweet_location': "['place']['full_name']",
                                'friend_count': "['user']['friends_count']",
                                'followers_count': "['user']['followers_count']",
                                'time_zone': "['user']['id_str']",
@@ -304,9 +305,9 @@ class TwitterMySQL:
                                                     ', '.join("%s" for r in rows[0]))
         return self._executemany(SQL, rows, verbose = verbose)
 
-    def _tweetTimeToMysql(self, timestr):
+    def _tweetTimeToMysql(self, timestr, parseFormat = '%a %b %d %H:%M:%S +0000 %Y'):
         # Mon Jan 25 05:02:27 +0000 2010
-        return str(time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(timestr, '%a %b %d %H:%M:%S +0000 %Y')))
+        return str(time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(timestr, parseFormat)))
 
     def _yearMonth(self, mysqlTime):
         return time.strftime("%Y_%m",time.strptime(mysqlTime,"%Y-%m-%d %H:%M:%S"))
