@@ -104,6 +104,9 @@ class TwitterMySQL:
         else:
             raise ValueError("Table name missing")
 
+        if "db" not in kwargs:
+            raise ValueError("You need a MySQL database to connect to")
+        
         if "dropIfExists" in kwargs:
             self.dropIfExists = kwargs["dropIfExists"]
             del kwargs["dropIfExists"]
