@@ -327,7 +327,7 @@ class TwitterMySQL:
                     try:
                         tweet[SQLcol] = eval("jTweet%s" % self.jTweetToRow[SQLcol])
                     except TypeError:
-                        print "Column %s not found in JSON object" % SQLcol
+                        _warn("Column %s not found in JSON object" % SQLcol)
                         tweet[SQLcol]
                     if isinstance(tweet[SQLcol], str) or isinstance(tweet[SQLcol], unicode):
                         tweet[SQLcol] = HTMLParser().unescape(tweet[SQLcol]).encode("utf-8")
