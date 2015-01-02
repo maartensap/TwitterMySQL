@@ -1,6 +1,6 @@
 #! /usr/bin/python
 
-__author__ = "Maarten Sap"
+__author__ = "Maarten Sap, Selah Lynch"
 __email__ = "maartensap93@gmail.com"
 __version__ = "0.3"
 
@@ -308,7 +308,7 @@ class TwitterMySQL:
                                                     ', '.join("%s" for r in rows[0]))
         return self._executemany(SQL, rows, verbose = verbose)
 
-#modify this as necessaary if I get a time in a format different than what is expected
+    # modify this as necessaary if I get a time in a format different than what is expected
     def _tweetTimeToMysql(self, timestr, parseFormat = '%a %b %d %H:%M:%S +0000 %Y'):
         # Mon Jan 25 05:02:27 +0000 2010
         return str(time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(timestr, parseFormat)))
@@ -316,16 +316,19 @@ class TwitterMySQL:
     def _yearMonth(self, mysqlTime):
         return time.strftime("%Y_%m",time.strptime(mysqlTime,"%Y-%m-%d %H:%M:%S"))
 
-#TODO - what is JTweet?  What type of object, one tweet or all the tweets?
+    # TODO - what is JTweet?  What type of object, one tweet or all the tweets?
     def _prepTweet(self, jTweet):
         
         tweet = {}
 
         for SQLcol in self.columns:
-
             try:
                 if SQLcol in self.jTweetToRow:
-                    tweet[SQLcol] = eval("jTweet%s" % self.jTweetToRow[SQLcol])
+                    try:
+                        tweet[SQLcol] = eval("jTweet%s" % self.jTweetToRow[SQLcol])
+                    except TypeError:
+                        print "Column %s not found in JSON object" % SQLcol
+                        tweet[SQLcol]
                     if isinstance(tweet[SQLcol], str) or isinstance(tweet[SQLcol], unicode):
                         tweet[SQLcol] = HTMLParser().unescape(tweet[SQLcol]).encode("utf-8")
                     if SQLcol == "created_time":
